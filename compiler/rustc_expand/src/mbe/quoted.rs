@@ -1,4 +1,4 @@
-use rustc_ast::token::{self, Delimiter, IdentIsRaw, NonterminalKind, Token};
+use rustc_ast::token::{self, Delimiter, IdentIsRaw, NonterminalKind, Token, TokenKind};
 use rustc_ast::tokenstream::TokenStreamIter;
 use rustc_ast::{NodeId, tokenstream};
 use rustc_ast_pretty::pprust;
@@ -183,6 +183,17 @@ fn maybe_emit_macro_metavar_expr_concat_feature(features: &Features, sess: &Sess
     }
 }
 
+/// Disallows `$$crate`, `$$$crate`, etc.
+fn disallow_dollar_dollar_crate(sess: &Session, tt: Option<&tokenstream::TokenTree>) {
+        if let Some(tokenstream::TokenTree::Token(token, _)) = tt
+        && let TokenKind::Ident(ident, is_raw) = token.kind
+        && ident == kw::Crate && is_raw == IdentIsRaw::No {
+            sess.dcx().span_err(token.span, format!("unexpected token: `{}`", pprust::token_to_string(token)));
+            sess.dcx().note("`$$crate` is not allowed");
+        };
+}
+
+
 /// Takes a `tokenstream::TokenTree` and returns a `self::TokenTree`. Specifically, this takes a
 /// generic `TokenTree`, such as is used in the rest of the compiler, and returns a `TokenTree`
 /// for use in parsing a macro.
@@ -307,6 +318,9 @@ fn parse_tree<'a>(
                 }
 
                 // `tree` is followed by another `$`. This is an escaped `$`.
+                //
+                // In case of multiple `$$$`, that is essentially `$$ $`, with the first
+                // `$` being escaped, turning into `$ $`, escaping again turns that into `$`
                 Some(&tokenstream::TokenTree::Token(
                     Token { kind: token::Dollar, span: dollar_span2 },
                     _,
@@ -319,6 +333,7 @@ fn parse_tree<'a>(
                     } else {
                         maybe_emit_macro_metavar_expr_feature(features, sess, dollar_span2);
                     }
+                    disallow_dollar_dollar_crate(sess, iter.peek());
                     TokenTree::token(token::Dollar, dollar_span2)
                 }
 
