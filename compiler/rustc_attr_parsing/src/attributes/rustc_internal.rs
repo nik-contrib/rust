@@ -13,6 +13,36 @@ impl<S: Stage> NoArgsAttributeParser<S> for RustcMainParser {
     const CREATE: fn(Span) -> AttributeKind = |_| AttributeKind::RustcMain;
 }
 
+pub(crate) struct RustcNeverReturnsNullPointerParser;
+
+impl<S: Stage> NoArgsAttributeParser<S> for RustcNeverReturnsNullPointerParser {
+    const PATH: &[Symbol] = &[sym::rustc_never_returns_null_ptr];
+    const ON_DUPLICATE: OnDuplicate<S> = OnDuplicate::Error;
+    const ALLOWED_TARGETS: AllowedTargets = AllowedTargets::AllowList(&[
+        Allow(Target::Fn),
+        Allow(Target::Method(MethodKind::Inherent)),
+        Allow(Target::Method(MethodKind::Trait { body: false })),
+        Allow(Target::Method(MethodKind::Trait { body: true })),
+        Allow(Target::Method(MethodKind::TraitImpl)),
+    ]);
+    const CREATE: fn(Span) -> AttributeKind = |_| AttributeKind::RustcNeverReturnsNullPointer;
+}
+pub(crate) struct RustcNoImplicitAutorefsParser;
+
+impl<S: Stage> NoArgsAttributeParser<S> for RustcNoImplicitAutorefsParser {
+    const PATH: &[Symbol] = &[sym::rustc_no_implicit_autorefs];
+    const ON_DUPLICATE: OnDuplicate<S> = OnDuplicate::Error;
+    const ALLOWED_TARGETS: AllowedTargets = AllowedTargets::AllowList(&[
+        Allow(Target::Fn),
+        Allow(Target::Method(MethodKind::Inherent)),
+        Allow(Target::Method(MethodKind::Trait { body: false })),
+        Allow(Target::Method(MethodKind::Trait { body: true })),
+        Allow(Target::Method(MethodKind::TraitImpl)),
+    ]);
+
+    const CREATE: fn(Span) -> AttributeKind = |_| AttributeKind::RustcNoImplicitAutorefs;
+}
+
 pub(crate) struct RustcLayoutScalarValidRangeStartParser;
 
 impl<S: Stage> SingleAttributeParser<S> for RustcLayoutScalarValidRangeStartParser {
@@ -85,6 +115,30 @@ impl<S: Stage> SingleAttributeParser<S> for RustcLegacyConstGenericsParser {
             attr_span: cx.attr_span,
         })
     }
+}
+
+pub(crate) struct RustcLintOptTyParser;
+
+impl<S: Stage> NoArgsAttributeParser<S> for RustcLintOptTyParser {
+    const PATH: &[Symbol] = &[sym::rustc_lint_opt_ty];
+    const ON_DUPLICATE: OnDuplicate<S> = OnDuplicate::Warn;
+    const ALLOWED_TARGETS: AllowedTargets = AllowedTargets::AllowList(&[Allow(Target::Struct)]);
+    const CREATE: fn(Span) -> AttributeKind = |_| AttributeKind::RustcLintOptTy;
+}
+
+pub(crate) struct RustcLintQueryInstabilityParser;
+
+impl<S: Stage> NoArgsAttributeParser<S> for RustcLintQueryInstabilityParser {
+    const PATH: &[Symbol] = &[sym::rustc_lint_query_instability];
+    const ON_DUPLICATE: OnDuplicate<S> = OnDuplicate::Warn;
+    const ALLOWED_TARGETS: AllowedTargets = AllowedTargets::AllowList(&[
+        Allow(Target::Fn),
+        Allow(Target::Method(MethodKind::Inherent)),
+        Allow(Target::Method(MethodKind::Trait { body: false })),
+        Allow(Target::Method(MethodKind::Trait { body: true })),
+        Allow(Target::Method(MethodKind::TraitImpl)),
+    ]);
+    const CREATE: fn(Span) -> AttributeKind = |_| AttributeKind::RustcLintQueryInstability;
 }
 
 pub(crate) struct RustcObjectLifetimeDefaultParser;
