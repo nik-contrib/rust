@@ -1,3 +1,4 @@
+#![feature(macro_metavar_expr)]
 // All possible usages of $$crate are currently forbidden
 
 pub const IDX: usize = 1;
