@@ -9,7 +9,9 @@ use std::sync::Arc;
 use rustc_ast::attr::MarkedAttrs;
 use rustc_ast::tokenstream::TokenStream;
 use rustc_ast::visit::{AssocCtxt, Visitor};
-use rustc_ast::{self as ast, AttrVec, Attribute, HasAttrs, Item, NodeId, PatKind, Safety};
+use rustc_ast::{
+    self as ast, AttrVec, Attribute, HasAttrs, HasNodeId as _, Item, NodeId, PatKind, Safety,
+};
 use rustc_data_structures::fx::{FxHashMap, FxIndexMap};
 use rustc_data_structures::sync;
 use rustc_errors::{BufferedEarlyLint, DiagCtxtHandle, ErrorGuaranteed, PResult};
@@ -60,6 +62,25 @@ pub enum Annotatable {
 }
 
 impl Annotatable {
+    pub fn node_id(&self) -> NodeId {
+        match self {
+            Annotatable::Item(item) => item.node_id(),
+            Annotatable::AssocItem(item, _) => item.node_id(),
+            Annotatable::ForeignItem(item) => item.node_id(),
+            Annotatable::Stmt(stmt) => stmt.node_id(),
+            Annotatable::Expr(expr) => expr.node_id(),
+            Annotatable::Arm(arm) => arm.node_id(),
+            Annotatable::ExprField(expr_field) => expr_field.node_id(),
+            Annotatable::PatField(pat_field) => pat_field.node_id(),
+            Annotatable::GenericParam(generic_param) => generic_param.node_id(),
+            Annotatable::Param(param) => param.node_id(),
+            Annotatable::FieldDef(field_def) => field_def.node_id(),
+            Annotatable::Variant(variant) => variant.node_id(),
+            Annotatable::WherePredicate(where_predicate) => where_predicate.node_id(),
+            Annotatable::Crate(krate) => krate.node_id(),
+        }
+    }
+
     pub fn span(&self) -> Span {
         match self {
             Annotatable::Item(item) => item.span,
@@ -1083,6 +1104,7 @@ pub struct DeriveResolution {
 
 pub trait ResolverExpand {
     fn next_node_id(&mut self) -> NodeId;
+    fn set_span_to_node_id(&mut self, span_to_node_id: FxHashMap<Span, NodeId>);
     fn invocation_parent(&self, id: LocalExpnId) -> LocalDefId;
 
     fn resolve_dollar_crates(&self);
@@ -1295,6 +1317,8 @@ impl<'a> ExtCtxt<'a> {
     }
 
     /// Returns a `Folder` for deeply expanding all macros in an AST node.
+    ///
+    /// Only used in eager expansion of macros.
     pub fn expander<'b>(&'b mut self) -> expand::MacroExpander<'b, 'a> {
         expand::MacroExpander::new(self, false)
     }

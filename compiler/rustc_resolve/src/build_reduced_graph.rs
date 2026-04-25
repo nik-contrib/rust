@@ -10,7 +10,8 @@ use std::sync::Arc;
 use rustc_ast::visit::{self, AssocCtxt, Visitor, WalkItemKind};
 use rustc_ast::{
     self as ast, AssocItem, AssocItemKind, Block, ConstItem, Delegation, Fn, ForeignItem,
-    ForeignItemKind, Inline, Item, ItemKind, NodeId, StaticItem, StmtKind, TraitAlias, TyAlias,
+    ForeignItemKind, HasAttrs, Inline, Item, ItemKind, NodeId, StaticItem, StmtKind, TraitAlias,
+    TyAlias,
 };
 use rustc_attr_parsing as attr;
 use rustc_attr_parsing::AttributeParser;
@@ -33,12 +34,11 @@ use tracing::debug;
 use crate::Namespace::{MacroNS, TypeNS, ValueNS};
 use crate::def_collector::collect_definitions;
 use crate::imports::{ImportData, ImportKind, OnUnknownData};
-use crate::macros::{MacroRulesDecl, MacroRulesScope, MacroRulesScopeRef};
 use crate::ref_mut::CmCell;
 use crate::{
     BindingKey, Decl, DeclData, DeclKind, ExternPreludeEntry, Finalize, IdentKey, MacroData,
-    Module, ModuleKind, ModuleOrUniformRoot, ParentScope, PathResult, ResolutionError, Resolver,
-    Segment, Used, VisResolutionError, errors,
+    MacroRulesDecl, MacroRulesScope, MacroRulesScopeRef, Module, ModuleKind, ModuleOrUniformRoot,
+    ParentScope, PathResult, ResolutionError, Resolver, Segment, Used, VisResolutionError, errors,
 };
 
 type Res = def::Res<NodeId>;
@@ -510,14 +510,6 @@ impl<'a, 'ra, 'tcx> BuildReducedGraphVisitor<'a, 'ra, 'tcx> {
             .map(|field| field.vis.span.until(field.ident.map_or(field.ty.span, |i| i.span)))
             .collect();
         self.r.field_visibility_spans.insert(def_id, field_vis);
-    }
-
-    fn block_needs_anonymous_module(&self, block: &Block) -> bool {
-        // If any statements are items, we need to create an anonymous module
-        block
-            .stmts
-            .iter()
-            .any(|statement| matches!(statement.kind, StmtKind::Item(_) | StmtKind::MacCall(_)))
     }
 
     // Add an import to the current module.
@@ -1094,17 +1086,15 @@ impl<'a, 'ra, 'tcx> BuildReducedGraphVisitor<'a, 'ra, 'tcx> {
     fn build_reduced_graph_for_block(&mut self, block: &Block) {
         let parent = self.parent_scope.module;
         let expansion = self.parent_scope.expansion;
-        if self.block_needs_anonymous_module(block) {
-            let module = self.r.new_local_module(
-                Some(parent),
-                ModuleKind::Block,
-                expansion.to_expn_id(),
-                block.span,
-                parent.no_implicit_prelude,
-            );
-            self.r.block_map.insert(block.id, module);
-            self.parent_scope.module = module; // Descend into the block.
-        }
+        let module = self.r.new_local_module(
+            Some(parent),
+            ModuleKind::Block,
+            expansion.to_expn_id(),
+            block.span,
+            parent.no_implicit_prelude,
+        );
+        self.r.block_map.insert(block.id, module);
+        self.parent_scope.module = module; // Descend into the block.
     }
 
     fn add_macro_use_decl(

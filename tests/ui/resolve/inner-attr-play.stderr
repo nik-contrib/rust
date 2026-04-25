@@ -1,0 +1,37 @@
+error[E0658]: attributes on expressions are experimental
+  --> $DIR/inner-attr-play.rs:8:5
+   |
+LL |     #![rustfmt::skip]
+   |     ^^^^^^^^^^^^^^^^^
+   |
+   = note: see issue #15701 <https://github.com/rust-lang/rust/issues/15701> for more information
+   = help: add `#![feature(stmt_expr_attributes)]` to the crate attributes to enable
+   = note: this compiler was built on YYYY-MM-DD; consider upgrading it if it is out of date
+
+[compiler/rustc_resolve/src/macros.rs:289:17] item.node_id() = NodeId(4294967040)
+[compiler/rustc_resolve/src/macros.rs:289:17] item.node_id() = NodeId(4294967040)
+error[E0658]: attributes on expressions are experimental
+  --> $DIR/inner-attr-play.rs:8:5
+   |
+LL |     #![rustfmt::skip]
+   |     ^^^^^^^^^^^^^^^^^
+   |
+   = note: see issue #15701 <https://github.com/rust-lang/rust/issues/15701> for more information
+   = help: add `#![feature(stmt_expr_attributes)]` to the crate attributes to enable
+   = note: this compiler was built on YYYY-MM-DD; consider upgrading it if it is out of date
+   = note: duplicate diagnostic emitted due to `-Z deduplicate-diagnostics=no`
+
+[compiler/rustc_resolve/src/macros.rs:289:17] item.node_id() = NodeId(4294967040)
+[compiler/rustc_resolve/src/macros.rs:1000:9] &self.node_id_to_def_id = UnordMap {
+    inner: {
+        NodeId(0): DefId(0:0 ~ inner_attr_play[06a2]),
+        NodeId(9): DefId(0:3 ~ inner_attr_play[06a2]::_),
+        NodeId(3): DefId(0:2 ~ inner_attr_play[06a2]::{use#0}),
+        NodeId(11): DefId(0:4 ~ inner_attr_play[06a2]::foo),
+        NodeId(18): DefId(0:5 ~ inner_attr_play[06a2]::main),
+        NodeId(2): DefId(0:1 ~ inner_attr_play[06a2]::std),
+    },
+}
+error: aborting due to 2 previous errors
+
+For more information about this error, try `rustc --explain E0658`.

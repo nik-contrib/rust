@@ -1,0 +1,128 @@
+[compiler/rustc_resolve/src/macros.rs:289:17] &item = Item(
+    Item {
+        attrs: [],
+        id: NodeId(4294967040),
+        span: $DIR/inner-attr.rs:18:1: 20:2 (#0),
+        vis: Visibility {
+            kind: Inherited,
+            span: $DIR/inner-attr.rs:18:1: 18:1 (#0),
+            tokens: None,
+        },
+        kind: Fn(
+            Fn {
+                defaultness: Implicit,
+                ident: main#0,
+                generics: Generics {
+                    params: [],
+                    where_clause: WhereClause {
+                        has_where_token: false,
+                        predicates: [],
+                        span: $DIR/inner-attr.rs:18:10: 18:10 (#0),
+                    },
+                    span: $DIR/inner-attr.rs:18:8: 18:8 (#0),
+                },
+                sig: FnSig {
+                    header: FnHeader {
+                        constness: No,
+                        coroutine_kind: None,
+                        safety: Default,
+                        ext: None,
+                    },
+                    decl: FnDecl {
+                        inputs: [],
+                        output: Default(
+                            $DIR/inner-attr.rs:18:10: 18:10 (#0),
+                        ),
+                    },
+                    span: $DIR/inner-attr.rs:18:1: 18:10 (#0),
+                },
+                contract: None,
+                define_opaque: None,
+                body: Some(
+                    Block {
+                        stmts: [],
+                        id: NodeId(4294967040),
+                        rules: Default,
+                        span: $DIR/inner-attr.rs:18:11: 20:2 (#0),
+                        tokens: None,
+                    },
+                ),
+                eii_impls: [],
+            },
+        ),
+        tokens: Some(
+            LazyAttrTokenStream(AttrTokenStream([Token(Token { kind: Ident("fn", No), span: $DIR/inner-attr.rs:18:1: 18:3 (#0) }, Alone), Token(Token { kind: Ident("main", No), span: $DIR/inner-attr.rs:18:4: 18:8 (#0) }, JointHidden), Delimited(DelimSpan { open: $DIR/inner-attr.rs:18:8: 18:9 (#0), close: $DIR/inner-attr.rs:18:9: 18:10 (#0) }, DelimSpacing { open: JointHidden, close: Alone }, Parenthesis, AttrTokenStream([])), Delimited(DelimSpan { open: $DIR/inner-attr.rs:18:11: 18:12 (#0), close: $DIR/inner-attr.rs:20:1: 20:2 (#0) }, DelimSpacing { open: Alone, close: Alone }, Brace, AttrTokenStream([]))])),
+        ),
+    },
+)
+error: compile error
+  --> $DIR/inner-attr.rs:13:34
+   |
+LL |         attr() ($($tt:tt)*) => { compile_error! { "compile error" } };
+   |                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+LL |     #![clippy::example]
+   |     ------------------- in this attribute macro expansion
+   |
+   = note: this error originates in the attribute macro `clippy::example` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+[compiler/rustc_resolve/src/macros.rs:997:9] &self.invocation_parents = {
+    expn0: InvocationParent {
+        parent_def: DefId(0:0 ~ inner_attr[2253]),
+        impl_trait_context: Existential,
+        in_attr: false,
+        const_arg_context: NonDirect,
+    },
+    expn3: InvocationParent {
+        parent_def: DefId(0:0 ~ inner_attr[2253]),
+        impl_trait_context: Existential,
+        in_attr: false,
+        const_arg_context: NonDirect,
+    },
+    expn2: InvocationParent {
+        parent_def: DefId(0:0 ~ inner_attr[2253]),
+        impl_trait_context: Existential,
+        in_attr: false,
+        const_arg_context: NonDirect,
+    },
+}
+[compiler/rustc_resolve/src/macros.rs:998:9] &self.invocation_parent_scopes = {
+    expn0: ParentScope {
+        module: Some(Def(Mod, DefId(0:0 ~ inner_attr[2253]))),
+        expansion: expn0,
+        macro_rules: Cell {
+            value: Empty,
+        },
+        derives: [],
+    },
+    expn3: ParentScope {
+        module: Some(Def(Mod, DefId(0:0 ~ inner_attr[2253]))),
+        expansion: expn2,
+        macro_rules: Cell {
+            value: Empty,
+        },
+        derives: [],
+    },
+    expn2: ParentScope {
+        module: Some(Def(Mod, DefId(0:0 ~ inner_attr[2253]))),
+        expansion: expn0,
+        macro_rules: Cell {
+            value: Empty,
+        },
+        derives: [],
+    },
+}
+[compiler/rustc_resolve/src/macros.rs:1000:9] &self.local_module_map = {
+    DefId(0:0 ~ inner_attr[2253]): Some(Def(Mod, DefId(0:0 ~ inner_attr[2253]))),
+    DefId(0:3 ~ inner_attr[2253]::clippy): Some(Def(Mod, DefId(0:3 ~ inner_attr[2253]::clippy))),
+}
+[compiler/rustc_resolve/src/macros.rs:1004:13] &parent_did = DefId(0:0 ~ inner_attr[2253])
+error[E0601]: `main` function not found in crate `inner_attr`
+  --> $DIR/inner-attr.rs:20:2
+   |
+LL | }
+   |  ^ consider adding a `main` function to `$DIR/inner-attr.rs`
+
+error: aborting due to 2 previous errors
+
+For more information about this error, try `rustc --explain E0601`.

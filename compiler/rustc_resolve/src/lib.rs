@@ -1,3 +1,4 @@
+#![allow(warnings)]
 //! This crate is responsible for the part of name resolution that doesn't require type checker.
 //!
 //! Module structure of the crate is built here.
@@ -161,6 +162,19 @@ enum ScopeSet<'ra> {
 /// Serves as a starting point for the scope visitor.
 /// This struct is currently used only for early resolution (imports and macros),
 /// but not for late resolution yet.
+///
+/// For example, the parent scope when resolving `inner::x` will contain `inner`:
+///
+/// ```ignore (illustrative)
+/// mod a {
+///     mod inner {
+///         macro x() {}
+///     }
+///
+///     #[inner::x]
+///     fn example() {}
+/// }
+/// ```
 #[derive(Clone, Copy, Debug)]
 struct ParentScope<'ra> {
     module: Module<'ra>,
@@ -478,6 +492,8 @@ enum PathResult<'ra> {
         /// In this case, `module` will point to `a`.
         module: Option<ModuleOrUniformRoot<'ra>>,
         /// The segment name of target
+        ///
+        /// In this case, that will be `not_exist`.
         segment_name: Symbol,
         error_implied_by_parse_error: bool,
         message: String,
@@ -1194,6 +1210,8 @@ struct DelegationFnSig {
 pub struct Resolver<'ra, 'tcx> {
     tcx: TyCtxt<'tcx>,
 
+    span_to_node_id: FxHashMap<Span, NodeId> = default::fx_hash_map(),
+
     /// Item with a given `LocalDefId` was defined during macro expansion with ID `ExpnId`.
     expn_that_defined: UnordMap<LocalDefId, ExpnId> = Default::default(),
 
@@ -1313,10 +1331,30 @@ pub struct Resolver<'ra, 'tcx> {
     unused_macro_rules: FxIndexMap<NodeId, DenseBitSet<usize>>,
     proc_macro_stubs: FxHashSet<LocalDefId> = default::fx_hash_set(),
     /// Traces collected during macro resolution and validated when it's complete.
+    ///
+    /// Tuple members:
+    ///
+    /// 1. If this is an inner attribute macro, like `#![rustfmt]`, this is the
+    ///    node ID of the item that the attribute is applied to
+    /// 2. Identifier of the macro
+    /// 3. The kind of macro it is
+    /// 4. The parent scope in which this macro was resolved in
+    /// 5.
+    /// 6.
     single_segment_macro_resolutions:
-        CmRefCell<Vec<(Ident, MacroKind, ParentScope<'ra>, Option<Decl<'ra>>, Option<Span>)>>,
+        CmRefCell<Vec<(Option<(LocalExpnId, Span)>, Ident, MacroKind, ParentScope<'ra>, Option<Decl<'ra>>, Option<Span>)>>,
+    /// Tuple members:
+    ///
+    /// 1. If this is an inner attribute macro, like `#![rustfmt]`, this is the
+    ///    node ID of the item that the attribute is applied to
+    /// 2. Path to the macro
+    /// 3. Span of the full path
+    /// 4. The kind of macro it is
+    /// 5. The parent scope in which this macro was resolved in
+    /// 6.
+    /// 7.
     multi_segment_macro_resolutions:
-        CmRefCell<Vec<(Vec<Segment>, Span, MacroKind, ParentScope<'ra>, Option<Res>, Namespace)>>,
+        CmRefCell<Vec<(Option<(LocalExpnId, Span)>, Vec<Segment>, Span, MacroKind, ParentScope<'ra>, Option<Res>, Namespace)>>,
     builtin_attrs: Vec<(Ident, ParentScope<'ra>)> = Vec::new(),
     /// `derive(Copy)` marks items they are applied to so they are treated specially later.
     /// Derive macros cannot modify the item themselves and have to store the markers in the global
@@ -1480,6 +1518,46 @@ impl<'ra> ResolverArenas<'ra> {
             self_decl,
         ))))
     }
+
+    /// Creates a module that is empty, with the given `parent`.
+    ///
+    /// ```ignore (illustrative)
+    /// mod a {}
+    /// ```
+    ///
+    /// If `a` is the parent, then this creates an empty module inside of `a`:
+    ///
+    /// ```ignore (illustrative)
+    /// mod a {
+    ///     mod _ {}
+    /// }
+    /// ```
+    fn new_empty_module(
+        &'ra self,
+        parent: Option<Module<'ra>>,
+        no_implicit_prelude: bool,
+    ) -> Module<'ra> {
+        self.new_module(
+            parent,
+            ModuleKind::Def(DefKind::Mod, CRATE_DEF_ID.to_def_id(), None),
+            rustc_middle::ty::Visibility::Public,
+            rustc_span::ExpnId::root(),
+            DUMMY_SP,
+            no_implicit_prelude,
+        )
+    }
+
+    fn new_root_module(&'ra self) -> Module<'ra> {
+        self.new_module(
+            None,
+            ModuleKind::Def(DefKind::Mod, rustc_hir::def_id::CRATE_DEF_ID.to_def_id(), None),
+            rustc_middle::ty::Visibility::Public,
+            rustc_span::ExpnId::root(),
+            DUMMY_SP,
+            false,
+        )
+    }
+
     fn alloc_decl(&'ra self, data: DeclData<'ra>) -> Decl<'ra> {
         Interned::new_unchecked(self.dropless.alloc(data))
     }
@@ -1657,14 +1735,8 @@ impl<'ra, 'tcx> Resolver<'ra, 'tcx> {
         );
         let local_modules = vec![graph_root];
         let local_module_map = FxIndexMap::from_iter([(CRATE_DEF_ID, graph_root)]);
-        let empty_module = arenas.new_module(
-            None,
-            ModuleKind::Def(DefKind::Mod, root_def_id, None),
-            Visibility::Public,
-            ExpnId::root(),
-            DUMMY_SP,
-            true,
-        );
+
+        let empty_module = arenas.new_empty_module(None, true);
 
         let mut node_id_to_def_id = NodeMap::default();
         let crate_feed = tcx.create_local_crate_def_id(crate_span);
@@ -2610,8 +2682,7 @@ fn module_to_string(mut module: Module<'_>) -> Option<String> {
     loop {
         if let ModuleKind::Def(.., name) = module.kind {
             if let Some(parent) = module.parent {
-                // `unwrap` is safe: the presence of a parent means it's not the crate root.
-                names.push(name.unwrap());
+                names.push(name.expect("the presence of a parent means it's not the crate root"));
                 module = parent
             } else {
                 break;

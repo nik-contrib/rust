@@ -19,6 +19,7 @@ use rustc_attr_parsing::{
     parse_cfg, validate_attr,
 };
 use rustc_data_structures::flat_map_in_place::FlatMapInPlace;
+use rustc_data_structures::fx::FxHashMap;
 use rustc_data_structures::stack::ensure_sufficient_stack;
 use rustc_errors::{PResult, msg};
 use rustc_feature::Features;
@@ -653,7 +654,7 @@ impl<'a, 'b> MacroExpander<'a, 'b> {
         // Resolve `$crate`s in the fragment for pretty-printing.
         self.cx.resolver.resolve_dollar_crates();
 
-        let mut invocations = {
+        let (mut invocations, span_to_node_id) = {
             let mut collector = InvocationCollector {
                 // Non-derive macro invocations cannot see the results of cfg expansion - they
                 // will either be removed along with the item, or invoked before the cfg/cfg_attr
@@ -662,12 +663,15 @@ impl<'a, 'b> MacroExpander<'a, 'b> {
                 // specially in `fully_expand_fragment`
                 cx: self.cx,
                 invocations: Vec::new(),
+                span_to_node_id: FxHashMap::default(),
                 monotonic: self.monotonic,
             };
             fragment.mut_visit_with(&mut collector);
             fragment.add_placeholders(extra_placeholders);
-            collector.invocations
+            (collector.invocations, collector.span_to_node_id)
         };
+
+        self.cx.resolver.set_span_to_node_id(span_to_node_id);
 
         if self.monotonic {
             self.cx
@@ -1249,12 +1253,14 @@ pub(crate) fn ensure_complete_parse<'a>(
 ///   `walk_*` / `walk_flat_map_*` method
 ///   for the current AST node.
 macro_rules! assign_id {
-    ($self:ident, $id:expr, $closure:expr) => {{
+    ($self:ident, $node:expr, $closure:expr) => {{
+        let id_mut = $node.node_id_mut();
         let old_id = $self.cx.current_expansion.lint_node_id;
         if $self.monotonic {
-            debug_assert_eq!(*$id, ast::DUMMY_NODE_ID);
+            debug_assert_eq!(*id_mut, ast::DUMMY_NODE_ID);
             let new_id = $self.cx.resolver.next_node_id();
-            *$id = new_id;
+            *id_mut = new_id;
+            $self.span_to_node_id.insert($node.span(), new_id);
             $self.cx.current_expansion.lint_node_id = new_id;
         }
         let ret = ($closure)();
@@ -1274,6 +1280,7 @@ trait InvocationCollectorNode: HasAttrs + HasNodeId + Sized {
     type OutputTy = SmallVec<[Self; 1]>;
     type ItemKind = ItemKind;
     const KIND: AstFragmentKind;
+    fn span(&self) -> Span;
     fn to_annotatable(self) -> Annotatable;
     fn fragment_to_output(fragment: AstFragment) -> Self::OutputTy;
     fn descr() -> &'static str {
@@ -1333,6 +1340,9 @@ trait InvocationCollectorNode: HasAttrs + HasNodeId + Sized {
 
 impl InvocationCollectorNode for Box<ast::Item> {
     const KIND: AstFragmentKind = AstFragmentKind::Items;
+    fn span(&self) -> Span {
+        self.span
+    }
     fn to_annotatable(self) -> Annotatable {
         Annotatable::Item(self)
     }
@@ -1491,6 +1501,9 @@ impl InvocationCollectorNode for AstNodeWrapper<Box<ast::AssocItem>, TraitItemTa
     type OutputTy = SmallVec<[Box<ast::AssocItem>; 1]>;
     type ItemKind = AssocItemKind;
     const KIND: AstFragmentKind = AstFragmentKind::TraitItems;
+    fn span(&self) -> Span {
+        self.wrapped.span
+    }
     fn to_annotatable(self) -> Annotatable {
         Annotatable::AssocItem(self.wrapped, AssocCtxt::Trait)
     }
@@ -1535,6 +1548,9 @@ impl InvocationCollectorNode for AstNodeWrapper<Box<ast::AssocItem>, ImplItemTag
     type OutputTy = SmallVec<[Box<ast::AssocItem>; 1]>;
     type ItemKind = AssocItemKind;
     const KIND: AstFragmentKind = AstFragmentKind::ImplItems;
+    fn span(&self) -> Span {
+        self.wrapped.span
+    }
     fn to_annotatable(self) -> Annotatable {
         Annotatable::AssocItem(self.wrapped, AssocCtxt::Impl { of_trait: false })
     }
@@ -1579,6 +1595,9 @@ impl InvocationCollectorNode for AstNodeWrapper<Box<ast::AssocItem>, TraitImplIt
     type OutputTy = SmallVec<[Box<ast::AssocItem>; 1]>;
     type ItemKind = AssocItemKind;
     const KIND: AstFragmentKind = AstFragmentKind::TraitImplItems;
+    fn span(&self) -> Span {
+        self.wrapped.span
+    }
     fn to_annotatable(self) -> Annotatable {
         Annotatable::AssocItem(self.wrapped, AssocCtxt::Impl { of_trait: true })
     }
@@ -1620,6 +1639,9 @@ impl InvocationCollectorNode for AstNodeWrapper<Box<ast::AssocItem>, TraitImplIt
 
 impl InvocationCollectorNode for Box<ast::ForeignItem> {
     const KIND: AstFragmentKind = AstFragmentKind::ForeignItems;
+    fn span(&self) -> Span {
+        self.span
+    }
     fn to_annotatable(self) -> Annotatable {
         Annotatable::ForeignItem(self)
     }
@@ -1650,6 +1672,9 @@ impl InvocationCollectorNode for Box<ast::ForeignItem> {
 
 impl InvocationCollectorNode for ast::Variant {
     const KIND: AstFragmentKind = AstFragmentKind::Variants;
+    fn span(&self) -> Span {
+        self.span
+    }
     fn to_annotatable(self) -> Annotatable {
         Annotatable::Variant(self)
     }
@@ -1666,6 +1691,9 @@ impl InvocationCollectorNode for ast::Variant {
 
 impl InvocationCollectorNode for ast::WherePredicate {
     const KIND: AstFragmentKind = AstFragmentKind::WherePredicates;
+    fn span(&self) -> Span {
+        self.span
+    }
     fn to_annotatable(self) -> Annotatable {
         Annotatable::WherePredicate(self)
     }
@@ -1682,6 +1710,9 @@ impl InvocationCollectorNode for ast::WherePredicate {
 
 impl InvocationCollectorNode for ast::FieldDef {
     const KIND: AstFragmentKind = AstFragmentKind::FieldDefs;
+    fn span(&self) -> Span {
+        self.span
+    }
     fn to_annotatable(self) -> Annotatable {
         Annotatable::FieldDef(self)
     }
@@ -1698,6 +1729,9 @@ impl InvocationCollectorNode for ast::FieldDef {
 
 impl InvocationCollectorNode for ast::PatField {
     const KIND: AstFragmentKind = AstFragmentKind::PatFields;
+    fn span(&self) -> Span {
+        self.span
+    }
     fn to_annotatable(self) -> Annotatable {
         Annotatable::PatField(self)
     }
@@ -1714,6 +1748,9 @@ impl InvocationCollectorNode for ast::PatField {
 
 impl InvocationCollectorNode for ast::ExprField {
     const KIND: AstFragmentKind = AstFragmentKind::ExprFields;
+    fn span(&self) -> Span {
+        self.span
+    }
     fn to_annotatable(self) -> Annotatable {
         Annotatable::ExprField(self)
     }
@@ -1730,6 +1767,9 @@ impl InvocationCollectorNode for ast::ExprField {
 
 impl InvocationCollectorNode for ast::Param {
     const KIND: AstFragmentKind = AstFragmentKind::Params;
+    fn span(&self) -> Span {
+        self.span
+    }
     fn to_annotatable(self) -> Annotatable {
         Annotatable::Param(self)
     }
@@ -1746,6 +1786,9 @@ impl InvocationCollectorNode for ast::Param {
 
 impl InvocationCollectorNode for ast::GenericParam {
     const KIND: AstFragmentKind = AstFragmentKind::GenericParams;
+    fn span(&self) -> Span {
+        self.ident.span
+    }
     fn to_annotatable(self) -> Annotatable {
         Annotatable::GenericParam(self)
     }
@@ -1778,6 +1821,9 @@ impl InvocationCollectorNode for ast::GenericParam {
 
 impl InvocationCollectorNode for ast::Arm {
     const KIND: AstFragmentKind = AstFragmentKind::Arms;
+    fn span(&self) -> Span {
+        self.span
+    }
     fn to_annotatable(self) -> Annotatable {
         Annotatable::Arm(self)
     }
@@ -1794,6 +1840,9 @@ impl InvocationCollectorNode for ast::Arm {
 
 impl InvocationCollectorNode for ast::Stmt {
     const KIND: AstFragmentKind = AstFragmentKind::Stmts;
+    fn span(&self) -> Span {
+        self.span
+    }
     fn to_annotatable(self) -> Annotatable {
         Annotatable::Stmt(Box::new(self))
     }
@@ -1871,6 +1920,9 @@ impl InvocationCollectorNode for ast::Stmt {
 impl InvocationCollectorNode for ast::Crate {
     type OutputTy = ast::Crate;
     const KIND: AstFragmentKind = AstFragmentKind::Crate;
+    fn span(&self) -> Span {
+        self.spans.inner_span
+    }
     fn to_annotatable(self) -> Annotatable {
         Annotatable::Crate(self)
     }
@@ -1900,6 +1952,9 @@ impl InvocationCollectorNode for ast::Crate {
 impl InvocationCollectorNode for ast::Ty {
     type OutputTy = Box<ast::Ty>;
     const KIND: AstFragmentKind = AstFragmentKind::Ty;
+    fn span(&self) -> Span {
+        self.span
+    }
     fn to_annotatable(self) -> Annotatable {
         unreachable!()
     }
@@ -1937,6 +1992,9 @@ impl InvocationCollectorNode for ast::Ty {
 impl InvocationCollectorNode for ast::Pat {
     type OutputTy = Box<ast::Pat>;
     const KIND: AstFragmentKind = AstFragmentKind::Pat;
+    fn span(&self) -> Span {
+        self.span
+    }
     fn to_annotatable(self) -> Annotatable {
         unreachable!()
     }
@@ -1963,6 +2021,9 @@ impl InvocationCollectorNode for ast::Pat {
 impl InvocationCollectorNode for ast::Expr {
     type OutputTy = Box<ast::Expr>;
     const KIND: AstFragmentKind = AstFragmentKind::Expr;
+    fn span(&self) -> Span {
+        self.span
+    }
     fn to_annotatable(self) -> Annotatable {
         Annotatable::Expr(Box::new(self))
     }
@@ -1993,6 +2054,9 @@ struct OptExprTag;
 impl InvocationCollectorNode for AstNodeWrapper<Box<ast::Expr>, OptExprTag> {
     type OutputTy = Option<Box<ast::Expr>>;
     const KIND: AstFragmentKind = AstFragmentKind::OptExpr;
+    fn span(&self) -> Span {
+        self.wrapped.span
+    }
     fn to_annotatable(self) -> Annotatable {
         Annotatable::Expr(self.wrapped)
     }
@@ -2028,6 +2092,9 @@ struct MethodReceiverTag;
 impl InvocationCollectorNode for AstNodeWrapper<ast::Expr, MethodReceiverTag> {
     type OutputTy = AstNodeWrapper<Box<ast::Expr>, MethodReceiverTag>;
     const KIND: AstFragmentKind = AstFragmentKind::MethodReceiverExpr;
+    fn span(&self) -> Span {
+        self.wrapped.span
+    }
     fn descr() -> &'static str {
         "an expression"
     }
@@ -2147,6 +2214,7 @@ impl DummyAstNode for AstNodeWrapper<ast::Expr, MethodReceiverTag> {
 struct InvocationCollector<'a, 'b> {
     cx: &'a mut ExtCtxt<'b>,
     invocations: Vec<(Invocation, Option<Arc<SyntaxExtension>>)>,
+    span_to_node_id: FxHashMap<Span, NodeId>,
     monotonic: bool,
 }
 
@@ -2432,12 +2500,12 @@ impl<'a, 'b> InvocationCollector<'a, 'b> {
                     );
                     Node::flatten_outputs(single_delegations.map(|item| {
                         let mut item = Node::from_item(item);
-                        assign_id!(self, item.node_id_mut(), || item.walk_flat_map(self))
+                        assign_id!(self, item, || item.walk_flat_map(self))
                     }))
                 }
                 None => {
                     match Node::wrap_flat_map_node_walk_flat_map(node, self, |mut node, this| {
-                        assign_id!(this, node.node_id_mut(), || node.walk_flat_map(this))
+                        assign_id!(this, node, || node.walk_flat_map(this))
                     }) {
                         Ok(output) => output,
                         Err(returned_node) => {
@@ -2487,7 +2555,7 @@ impl<'a, 'b> InvocationCollector<'a, 'b> {
                 }
                 None if node.delegation().is_some() => unreachable!(),
                 None => {
-                    assign_id!(self, node.node_id_mut(), || node.walk(self))
+                    assign_id!(self, node, || node.walk(self))
                 }
             };
         }
